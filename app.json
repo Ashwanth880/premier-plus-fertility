@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Premier Plus Clinic",
+    "slug": "premier-plus-clinic",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "sdkVersion": "52.0.0",
+    "ios": {
+      "supportsTablet": true
+    },
+    "web": {
+      "favicon": "./public/logo.svg"
+    }
+  }
+}
