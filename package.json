@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "predeploy": "vite build",
     "deploy": "npx gh-pages -d dist",
+    "postbuild": "node -e \"require('fs').copyFileSync('dist/index.html', 'index.html'); require('fs').cpSync('dist/assets', 'assets', {recursive: true});\"",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
   },
