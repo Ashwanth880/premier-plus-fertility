@@ -2,15 +2,11 @@
   "name": "react-example",
   "private": true,
   "version": "0.0.0",
-  "main": "index.js",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "expo:start": "npx expo start",
-    "expo:android": "npx expo start --android",
-    "expo:ios": "npx expo start --ios",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
@@ -20,15 +16,12 @@
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
-    "expo": "^57.0.20",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "qrcode.react": "^4.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-native": "0.86.3",
-    "react-native-webview": "13.16.1",
     "vite": "^6.2.3"
   },
   "devDependencies": {
