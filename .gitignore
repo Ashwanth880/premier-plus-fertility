@@ -143,4 +143,4 @@ vite.config.ts.timestamp-*
 .expo/
 bun.lock
 .DS_Store
-
+.idea/
