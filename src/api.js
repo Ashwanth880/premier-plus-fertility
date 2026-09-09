@@ -1,4 +1,4 @@
-const API_BASE_URL = "/api";
+const API_BASE_URL = import.meta.env.VITE_BACKEND_API_URL || (import.meta.env.DEV ? "/api" : "http://13.204.230.143/api");
 
 export { API_BASE_URL };
 
