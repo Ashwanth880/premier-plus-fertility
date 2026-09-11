@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { createAppointment, createPatient } from "./api";
+import { createAppointmentWithKey, createPatientWithKey, getAvailability, getPatientById } from "./api";
 import {
   calculateAge,
   getFullName,
@@ -68,7 +68,7 @@ export default function App() {
   const [appointment, setAppointment] = useState({
     appointmentDate: getTodayStr(),
     startTime: "10:00",
-    endTime: "10:30",
+    endTime: "10:15",
     type: "consultation",
     reason: "Initial consultation & assessment",
   });
@@ -88,6 +88,12 @@ export default function App() {
   // Async states
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState(null);
+  const [availableSlots, setAvailableSlots] = useState([]);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
+  const patientIdempotencyKeyRef = useRef(null);
+  const partnerIdempotencyKeyRef = useRef(null);
+  const appointmentIdempotencyKeyRef = useRef(null);
 
   // Debug payload viewer toggle
   const [showDebugPayload, setShowDebugPayload] = useState(false);
@@ -136,6 +142,37 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    let active = true;
+    setAvailabilityLoading(true);
+    setAvailabilityError("");
+    getAvailability(patient.branch, appointment.appointmentDate)
+      .then((response) => {
+        if (!active) return;
+        const slots = response?.data?.slots || [];
+        setAvailableSlots(slots);
+        setAppointment((current) => {
+          if (slots.some((slot) => slot.start_time === current.startTime)) return current;
+          return {
+            ...current,
+            startTime: slots[0]?.start_time || "",
+            endTime: slots[0]?.end_time || "",
+          };
+        });
+      })
+      .catch((error) => {
+        if (!active) return;
+        setAvailableSlots([]);
+        setAvailabilityError(error.message || "Available appointment slots could not be loaded.");
+      })
+      .finally(() => {
+        if (active) setAvailabilityLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [patient.branch, appointment.appointmentDate]);
+
   // Handle Step 1 Submit: Register Patient
   const handlePatientSubmit = async (e) => {
     if (e) e.preventDefault();
@@ -166,7 +203,8 @@ export default function App() {
     setBusy(true);
     try {
       // 1. Create Primary Patient
-      const response = await createPatient(payload);
+      patientIdempotencyKeyRef.current ||= globalThis.crypto?.randomUUID?.() || `${Date.now()}-patient`;
+      const response = await createPatientWithKey(payload, patientIdempotencyKeyRef.current);
       const data = response?.data;
       if (!data?.id) {
         throw new Error("Backend did not return a valid patient UUID.");
@@ -185,39 +223,21 @@ export default function App() {
           branch: patient.branch,
           date_of_birth: patient.partnerDateOfBirth || "1999-08-20",
           gender: patient.partnerGender || (patient.gender === "male" ? "female" : "male"),
-          phone: (patient.partnerPhone || patient.phone).replace(/\s+/g, ""),
+          phone: patient.partnerPhone.replace(/\s+/g, ""),
           purpose: "Fertility Consultation (Spouse)",
           referral_source: patient.referralSource,
         };
 
         try {
-          const partnerRes = await createPatient(partnerPayload);
+          partnerIdempotencyKeyRef.current ||= globalThis.crypto?.randomUUID?.() || `${Date.now()}-partner`;
+          const partnerRes = await createPatientWithKey(partnerPayload, partnerIdempotencyKeyRef.current);
           const partnerData = partnerRes?.data || partnerRes;
-          if (partnerData) {
-            if (!partnerData.patient_id) {
-              partnerData.patient_id = "PF" + Math.floor(10000 + Math.random() * 90000);
-            }
-            setPartnerRecord(partnerData);
-          } else {
-            setPartnerRecord({
-              id: "partner-" + Date.now(),
-              patient_id: "PF" + Math.floor(10000 + Math.random() * 90000),
-              full_name: pName,
-              title: patient.partnerTitle,
-              first_name: patient.partnerFirstName,
-              last_name: patient.partnerLastName,
-            });
+          if (!partnerData?.id) {
+            throw new Error("Backend did not return a valid partner patient record.");
           }
+          setPartnerRecord(partnerData);
         } catch (partnerErr) {
-          console.warn("Partner registration fallback:", partnerErr);
-          setPartnerRecord({
-            id: "partner-" + Date.now(),
-            patient_id: "PF" + Math.floor(10000 + Math.random() * 90000),
-            full_name: pName,
-            title: patient.partnerTitle,
-            first_name: patient.partnerFirstName,
-            last_name: patient.partnerLastName,
-          });
+          throw new Error(`Partner registration failed: ${partnerErr.message}`);
         }
       } else {
         setPartnerRecord(null);
@@ -271,7 +291,8 @@ export default function App() {
 
     setBusy(true);
     try {
-      const response = await createAppointment(payload);
+      appointmentIdempotencyKeyRef.current ||= globalThis.crypto?.randomUUID?.() || `${Date.now()}-appointment`;
+      const response = await createAppointmentWithKey(payload, appointmentIdempotencyKeyRef.current);
       const data = response?.data;
       setAppointmentRecord(data);
       setStep(3);
@@ -300,25 +321,23 @@ export default function App() {
 
     setBusy(true);
     setExistingLookupError("");
+    patientIdempotencyKeyRef.current = null;
+    partnerIdempotencyKeyRef.current = null;
+    appointmentIdempotencyKeyRef.current = null;
     const id = existingPatientId.trim();
 
     try {
-      const res = await fetch(`/api/patients/${id}`);
-      const data = await res.json();
-      if (data?.data) {
-        setPatientRecord(data.data);
-      } else {
-        setPatientRecord({ id, patient_id: id, full_name: "Patient (" + id.slice(0, 8) + ")" });
+      const response = await getPatientById(id);
+      if (!response?.data?.id) {
+        throw new Error("Patient lookup did not return a valid patient record.");
       }
+      setPatientRecord(response.data);
       setPartnerRecord(null);
       setStep(2);
       setMode("form");
     } catch (err) {
-      console.warn("Patient lookup failed:", err);
-      setPatientRecord({ id, patient_id: id, full_name: "Patient (" + id.slice(0, 8) + ")" });
-      setPartnerRecord(null);
-      setStep(2);
-      setMode("form");
+      console.error("Patient lookup failed:", err);
+      setExistingLookupError(err.message || "Patient could not be found.");
     } finally {
       setBusy(false);
     }
@@ -326,6 +345,9 @@ export default function App() {
 
   // Reset entire flow for next patient
   const handleReset = () => {
+    patientIdempotencyKeyRef.current = null;
+    partnerIdempotencyKeyRef.current = null;
+    appointmentIdempotencyKeyRef.current = null;
     setPatient({
       title: "Mr",
       firstName: "",
@@ -346,7 +368,7 @@ export default function App() {
     setAppointment({
       appointmentDate: getTodayStr(),
       startTime: "10:00",
-      endTime: "10:30",
+      endTime: "10:15",
       type: "consultation",
       reason: "Initial consultation & assessment",
     });
@@ -537,7 +559,7 @@ export default function App() {
                       Endpoint: {serverError.endpoint}
                     </p>
                     <p>
-                      Backend Proxy: <code className="font-mono text-slate-800">/api{serverError.endpoint}</code>
+                      Backend Proxy: <code className="font-mono text-slate-800">{serverError.endpoint}</code>
                     </p>
                     {serverError.status && (
                       <p className="text-amber-800 font-medium">
@@ -965,7 +987,7 @@ export default function App() {
                       {/* Partner Mobile Phone Number */}
                       <div className="sm:col-span-6 flex flex-col gap-1.5">
                         <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                          Partner Mobile Number (Optional - defaults to primary number if blank)
+                          Partner Mobile Number <span className="text-rose-500">*</span>
                         </label>
                         <div className="relative">
                           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-medium text-slate-400">
@@ -984,6 +1006,9 @@ export default function App() {
                             className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-12 pr-12 text-sm text-slate-800 placeholder:text-slate-400 focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100 focus:outline-none shadow-2xs"
                           />
                         </div>
+                        {errors.partnerPhone && (
+                          <p className="text-xs text-rose-600 font-medium">{errors.partnerPhone}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1072,6 +1097,15 @@ export default function App() {
 
               {/* Time Picker */}
               <div>
+                {availabilityLoading && (
+                  <p className="mb-2 text-xs font-medium text-slate-500">Loading available appointment slots...</p>
+                )}
+                {availabilityError && (
+                  <p className="mb-2 text-xs font-medium text-rose-600">{availabilityError}</p>
+                )}
+                {!availabilityLoading && !availabilityError && availableSlots.length === 0 && (
+                  <p className="mb-2 text-xs font-medium text-amber-700">No appointment slots are available for this date.</p>
+                )}
                 <TimePicker
                   startTime={appointment.startTime}
                   endTime={appointment.endTime}
@@ -1079,6 +1113,7 @@ export default function App() {
                   onEndTimeChange={(val) => updateAppointment("endTime", val)}
                   errorStart={errors.startTime}
                   errorEnd={errors.endTime}
+                  availableSlots={availableSlots}
                 />
               </div>
 

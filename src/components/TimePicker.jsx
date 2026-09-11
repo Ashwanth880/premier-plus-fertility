@@ -1,33 +1,9 @@
 import React, { useMemo } from "react";
 import { Clock } from "lucide-react";
 
-// Generate 30-minute intervals from 08:00 to 20:00
-export const TIME_SLOTS = (() => {
-  const slots = [];
-  for (let hour = 8; hour <= 20; hour++) {
-    for (const minute of [0, 30]) {
-      if (hour === 20 && minute > 0) continue; // stop at 20:00
-
-      const h24 = String(hour).padStart(2, "0");
-      const m = String(minute).padStart(2, "0");
-      const value24 = `${h24}:${m}`;
-
-      const period = hour >= 12 ? "PM" : "AM";
-      const h12 = hour % 12 === 0 ? 12 : hour % 12;
-      const label12 = `${String(h12).padStart(2, "0")}:${m} ${period}`;
-
-      slots.push({ value24, label12, hour, minute });
-    }
-  }
-  return slots;
-})();
-
 export function formatTime24to12(time24) {
-  if (!time24) return "";
-  const slot = TIME_SLOTS.find((s) => s.value24 === time24);
-  if (slot) return slot.label12;
-
   // Fallback conversion
+  if (!time24) return "";
   const [hStr, mStr] = time24.split(":");
   const hour = parseInt(hStr, 10);
   const minute = parseInt(mStr, 10);
@@ -44,24 +20,29 @@ export default function TimePicker({
   onEndTimeChange,
   errorStart = "",
   errorEnd = "",
+  availableSlots = [],
 }) {
+  const selectableSlots = useMemo(() => {
+    return availableSlots.map((slot) => ({
+      value24: slot.start_time,
+      label12: formatTime24to12(slot.start_time),
+    }));
+  }, [availableSlots]);
+
   const handleStartTimeSelect = (val24) => {
     onStartTimeChange(val24);
 
-    const currIdx = TIME_SLOTS.findIndex((s) => s.value24 === val24);
-    if (currIdx >= 0 && currIdx < TIME_SLOTS.length - 1) {
-      const nextSlot = TIME_SLOTS[currIdx + 1].value24;
-      if (!endTime || endTime <= val24) {
-        onEndTimeChange(nextSlot);
-      }
+    const selectedSlot = selectableSlots.find((slot) => slot.value24 === val24);
+    if (selectedSlot) {
+      onEndTimeChange(availableSlots.find((slot) => slot.start_time === val24)?.end_time || "");
     }
   };
 
   const endSlots = useMemo(() => {
-    if (!startTime) return TIME_SLOTS;
-    // End time must be strictly after start time
-    return TIME_SLOTS.filter((s) => s.value24 > startTime);
-  }, [startTime]);
+    if (!startTime) return [];
+    const endTime = availableSlots.find((slot) => slot.start_time === startTime)?.end_time;
+    return endTime ? [{ value24: endTime, label12: formatTime24to12(endTime) }] : [];
+  }, [availableSlots, startTime]);
 
   return (
     <div className="space-y-3">
@@ -81,7 +62,7 @@ export default function TimePicker({
               <option value="" disabled>
                 Select start time
               </option>
-              {TIME_SLOTS.slice(0, -1).map((slot) => (
+              {selectableSlots.map((slot) => (
                 <option key={slot.value24} value={slot.value24}>
                   {slot.label12}
                 </option>

@@ -100,6 +100,14 @@ export function validatePatient(patient) {
     if (!patient.partnerDateOfBirth) {
       errors.partnerDateOfBirth = "Partner date of birth is required.";
     }
+    const partnerPhone = (patient.partnerPhone || "").replace(/\D/g, "");
+    if (!partnerPhone) {
+      errors.partnerPhone = "Partner phone is required because each patient must have a unique phone number.";
+    } else if (!/^[6-9][0-9]{9}$/.test(partnerPhone)) {
+      errors.partnerPhone = "Enter a valid partner 10-digit mobile number starting with 6-9.";
+    } else if (partnerPhone === phone) {
+      errors.partnerPhone = "Partner phone must be different from the primary patient phone.";
+    }
   }
 
   return {
@@ -138,6 +146,16 @@ export function validateAppointment(appointment) {
     // Both are in "HH:MM" 24-hour format
     if (appointment.startTime >= appointment.endTime) {
       errors.endTime = "End time must be later than start time.";
+    }
+    const [startHour, startMinute] = appointment.startTime.split(":").map(Number);
+    const [endHour, endMinute] = appointment.endTime.split(":").map(Number);
+    const duration = (endHour * 60 + endMinute) - (startHour * 60 + startMinute);
+    if (duration !== 15) {
+      errors.endTime = "Appointments must be exactly 15 minutes.";
+    }
+    const startMinutes = startHour * 60 + startMinute;
+    if (startMinutes >= 11 * 60 + 30 && startMinutes < 12 * 60 + 30) {
+      errors.startTime = "The doctor is unavailable during lunch from 11:30 AM to 12:30 PM.";
     }
   }
 
